@@ -1,6 +1,6 @@
 # Web Quiz Engine
 
-Stages 1–3 of the Web Quiz Engine project: a Spring Boot JSON API for creating and solving quizzes.
+Stages 1-4 of the Web Quiz Engine project: a Spring Boot JSON API for creating and solving quizzes.
 
 ## Run
 
@@ -10,33 +10,33 @@ mvn spring-boot:run
 
 ## API
 
-### Get the quiz
+### Get the fixed Stage 1 quiz
 
 ```http
 GET /api/quiz
 ```
 
-### Submit an answer
+### Submit the fixed Stage 1 answer
 
 ```http
 POST /api/quiz?answer=2
 ```
 
-The answer index is zero-based. The correct answer for the fixed Stage 1 quiz is index `2`.
+### Multiple quizzes
 
-## Multiple quizzes
-
-Stage 2 stores quizzes in memory and exposes:
+The multi-quiz API exposes:
 
 - `POST /api/quizzes`
 - `GET /api/quizzes/{id}`
 - `GET /api/quizzes`
-- `POST /api/quizzes/{id}/solve?answer={index}`
+- `POST /api/quizzes/{id}/solve`
 
 Create requests must contain a non-blank `title`, a non-blank `text`, and at least two `options`.
-The `answer` is an array of correct option indexes and may be empty when no option is correct.
-Solve requests also send an `answer` array, and the submitted indexes are compared as a set.
+The `answer` is an array of correct option indexes and may be empty or absent when no option is correct.
+Solve requests send an `answer` array. The submitted indexes are compared as a set.
 The answer is never included when retrieving or listing quizzes.
+
+Stage 4 persists quizzes in a disk-based H2 database named `quizdb`, so quizzes survive service restarts.
 
 ## Test
 

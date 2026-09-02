@@ -1,5 +1,10 @@
 package com.tohidabdi.webquizengine;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -10,60 +15,51 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 @RestController
 @RequestMapping("/api/quizzes")
 public class QuizzesController {
 
-    private final AtomicInteger nextId = new AtomicInteger(1);
-    private final ConcurrentMap<Integer, StoredQuiz> quizzes = new ConcurrentHashMap<>();
+    private final QuizRepository quizRepository;
+
+    public QuizzesController(QuizRepository quizRepository) {
+        this.quizRepository = quizRepository;
+    }
 
     @PostMapping
     @ResponseStatus(HttpStatus.OK)
     public QuizView createQuiz(@Valid @RequestBody QuizRequest request) {
-        int id = nextId.getAndIncrement();
-        StoredQuiz quiz = new StoredQuiz(
-                id,
+        QuizEntity quiz = new QuizEntity(
                 request.title(),
                 request.text(),
                 request.options(),
                 request.answer() == null ? null : new HashSet<>(request.answer())
         );
-        quizzes.put(id, quiz);
-        return quiz.view();
+        return toView(quizRepository.save(quiz));
     }
 
     @GetMapping("/{id}")
     public QuizView getQuiz(@PathVariable int id) {
-        return findQuiz(id).view();
+        return toView(findQuiz(id));
     }
 
     @GetMapping
     public List<QuizView> getAllQuizzes() {
-        return quizzes.values().stream()
-                .sorted((first, second) -> Integer.compare(first.id(), second.id()))
-                .map(StoredQuiz::view)
+        return quizRepository.findAll(Sort.by(Sort.Direction.ASC, "id")).stream()
+                .map(this::toView)
                 .toList();
     }
 
     @PostMapping("/{id}/solve")
     public AnswerResponse solveQuiz(@PathVariable int id, @RequestBody SolveRequest request) {
-        StoredQuiz quiz = findQuiz(id);
+        QuizEntity quiz = findQuiz(id);
         Set<Integer> submittedAnswers = request.answer() == null
                 ? Set.of()
                 : new HashSet<>(request.answer());
-        boolean correct = quiz.answer().equals(submittedAnswers);
+        boolean correct = quiz.getAnswer().equals(submittedAnswers);
         if (correct) {
             return new AnswerResponse(true, "Congratulations, you're right!");
         }
@@ -71,12 +67,13 @@ public class QuizzesController {
         return new AnswerResponse(false, "Wrong answer! Please, try again.");
     }
 
-    private StoredQuiz findQuiz(int id) {
-        StoredQuiz quiz = quizzes.get(id);
-        if (quiz == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Quiz not found");
-        }
-        return quiz;
+    private QuizEntity findQuiz(int id) {
+        return quizRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Quiz not found"));
+    }
+
+    private QuizView toView(QuizEntity quiz) {
+        return new QuizView(quiz.getId(), quiz.getTitle(), quiz.getText(), quiz.getOptions());
     }
 
     public record QuizRequest(
@@ -94,17 +91,5 @@ public class QuizzesController {
     }
 
     public record AnswerResponse(boolean success, String feedback) {
-    }
-
-    private record StoredQuiz(int id, String title, String text, List<String> options, Set<Integer> answer) {
-
-        private StoredQuiz {
-            options = List.copyOf(new ArrayList<>(options));
-            answer = answer == null ? Set.of() : Set.copyOf(answer);
-        }
-
-        private QuizView view() {
-            return new QuizView(id, title, text, options);
-        }
     }
 }
