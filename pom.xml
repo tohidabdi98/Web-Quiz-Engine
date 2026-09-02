@@ -15,7 +15,7 @@
     <artifactId>web-quiz-engine</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>Web Quiz Engine</name>
-    <description>Stage 1 REST API for solving a simple quiz</description>
+    <description>REST API for creating and solving quizzes</description>
 
     <properties>
         <java.version>17</java.version>
