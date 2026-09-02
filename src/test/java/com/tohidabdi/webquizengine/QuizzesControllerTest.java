@@ -7,10 +7,16 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -24,6 +30,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 })
 class QuizzesControllerTest {
 
+    private static final String OWNER_EMAIL = "owner@example.com";
+    private static final String OWNER_PASSWORD = "ownerpass";
+    private static final String OTHER_EMAIL = "other@example.com";
+    private static final String OTHER_PASSWORD = "otherpass";
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -33,10 +44,19 @@ class QuizzesControllerTest {
     @Autowired
     private QuizRepository quizRepository;
 
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
     @BeforeEach
-    void clearDatabase() {
+    void setUpUsers() {
         quizRepository.deleteAll();
         quizRepository.flush();
+        userRepository.deleteAll();
+        userRepository.save(new UserEntity(OWNER_EMAIL, passwordEncoder.encode(OWNER_PASSWORD)));
+        userRepository.save(new UserEntity(OTHER_EMAIL, passwordEncoder.encode(OTHER_PASSWORD)));
     }
 
     @Test
@@ -50,9 +70,9 @@ class QuizzesControllerTest {
                 }
                 """;
 
-        int id = createQuiz(quiz);
+        int id = createQuiz(quiz, OWNER_EMAIL, OWNER_PASSWORD);
 
-        mockMvc.perform(get("/api/quizzes/{id}", id))
+        mockMvc.perform(get("/api/quizzes/{id}", id).header(HttpHeaders.AUTHORIZATION, auth(OWNER_EMAIL, OWNER_PASSWORD)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(id))
                 .andExpect(jsonPath("$.title").value("The Java Logo"))
@@ -64,12 +84,12 @@ class QuizzesControllerTest {
     void allQuizzesAreReturnedInIdOrderWithoutAnswers() throws Exception {
         int firstId = createQuiz("""
                 {"title":"First","text":"Question 1","options":["A","B"],"answer":[0]}
-                """);
+                """, OWNER_EMAIL, OWNER_PASSWORD);
         int secondId = createQuiz("""
                 {"title":"Second","text":"Question 2","options":["C","D"],"answer":[1]}
-                """);
+                """, OWNER_EMAIL, OWNER_PASSWORD);
 
-        mockMvc.perform(get("/api/quizzes"))
+        mockMvc.perform(get("/api/quizzes").header(HttpHeaders.AUTHORIZATION, auth(OWNER_EMAIL, OWNER_PASSWORD)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[0].id").value(firstId))
@@ -82,7 +102,7 @@ class QuizzesControllerTest {
 
     @Test
     void emptyServiceReturnsAnEmptyArray() throws Exception {
-        mockMvc.perform(get("/api/quizzes"))
+        mockMvc.perform(get("/api/quizzes").header(HttpHeaders.AUTHORIZATION, auth(OWNER_EMAIL, OWNER_PASSWORD)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
     }
@@ -91,9 +111,10 @@ class QuizzesControllerTest {
     void quizCanBeSolvedWithCorrectOrIncorrectAnswer() throws Exception {
         int id = createQuiz("""
                 {"title":"Quiz","text":"Question","options":["A","B","C"],"answer":[0,2]}
-                """);
+                """, OWNER_EMAIL, OWNER_PASSWORD);
 
         mockMvc.perform(post("/api/quizzes/{id}/solve", id)
+                        .header(HttpHeaders.AUTHORIZATION, auth(OTHER_EMAIL, OTHER_PASSWORD))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"answer":[2,0]}
@@ -103,6 +124,7 @@ class QuizzesControllerTest {
                 .andExpect(jsonPath("$.feedback").value("Congratulations, you're right!"));
 
         mockMvc.perform(post("/api/quizzes/{id}/solve", id)
+                        .header(HttpHeaders.AUTHORIZATION, auth(OTHER_EMAIL, OTHER_PASSWORD))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"answer":[0]}
@@ -114,10 +136,11 @@ class QuizzesControllerTest {
 
     @Test
     void missingQuizReturnsNotFound() throws Exception {
-        mockMvc.perform(get("/api/quizzes/15"))
+        mockMvc.perform(get("/api/quizzes/15").header(HttpHeaders.AUTHORIZATION, auth(OWNER_EMAIL, OWNER_PASSWORD)))
                 .andExpect(status().isNotFound());
 
         mockMvc.perform(post("/api/quizzes/15/solve")
+                        .header(HttpHeaders.AUTHORIZATION, auth(OWNER_EMAIL, OWNER_PASSWORD))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"answer":[1]}
@@ -128,6 +151,7 @@ class QuizzesControllerTest {
     @Test
     void missingTitleIsRejected() throws Exception {
         mockMvc.perform(post("/api/quizzes")
+                        .header(HttpHeaders.AUTHORIZATION, auth(OWNER_EMAIL, OWNER_PASSWORD))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -142,6 +166,7 @@ class QuizzesControllerTest {
     @Test
     void blankTitleIsRejected() throws Exception {
         mockMvc.perform(post("/api/quizzes")
+                        .header(HttpHeaders.AUTHORIZATION, auth(OWNER_EMAIL, OWNER_PASSWORD))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -157,6 +182,7 @@ class QuizzesControllerTest {
     @Test
     void fewerThanTwoOptionsAreRejected() throws Exception {
         mockMvc.perform(post("/api/quizzes")
+                        .header(HttpHeaders.AUTHORIZATION, auth(OWNER_EMAIL, OWNER_PASSWORD))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -173,9 +199,10 @@ class QuizzesControllerTest {
     void quizzesWithNoCorrectOptionsCanBeSolvedWithAnEmptyAnswer() throws Exception {
         int id = createQuiz("""
                 {"title":"Quiz","text":"Question","options":["A","B"],"answer":[]}
-                """);
+                """, OWNER_EMAIL, OWNER_PASSWORD);
 
         mockMvc.perform(post("/api/quizzes/{id}/solve", id)
+                        .header(HttpHeaders.AUTHORIZATION, auth(OWNER_EMAIL, OWNER_PASSWORD))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"answer":[]}
@@ -185,21 +212,48 @@ class QuizzesControllerTest {
     }
 
     @Test
-    void quizSurvivesRepositoryReload() throws Exception {
+    void quizCanBeDeletedByItsAuthor() throws Exception {
         int id = createQuiz("""
-                {"title":"Persistent","text":"Question","options":["A","B"],"answer":[1]}
-                """);
+                {"title":"Deletable","text":"Question","options":["A","B"],"answer":[0]}
+                """, OWNER_EMAIL, OWNER_PASSWORD);
 
-        quizRepository.flush();
+        mockMvc.perform(delete("/api/quizzes/{id}", id)
+                        .header(HttpHeaders.AUTHORIZATION, auth(OWNER_EMAIL, OWNER_PASSWORD)))
+                .andExpect(status().isNoContent())
+                .andExpect(jsonPath("$").doesNotExist());
 
-        mockMvc.perform(get("/api/quizzes/{id}", id))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.title").value("Persistent"))
-                .andExpect(jsonPath("$.options[1]").value("B"));
+        mockMvc.perform(get("/api/quizzes/{id}", id)
+                        .header(HttpHeaders.AUTHORIZATION, auth(OWNER_EMAIL, OWNER_PASSWORD)))
+                .andExpect(status().isNotFound());
     }
 
-    private int createQuiz(String quiz) throws Exception {
+    @Test
+    void quizCannotBeDeletedByAnotherUser() throws Exception {
+        int id = createQuiz("""
+                {"title":"Protected","text":"Question","options":["A","B"],"answer":[0]}
+                """, OWNER_EMAIL, OWNER_PASSWORD);
+
+        mockMvc.perform(delete("/api/quizzes/{id}", id)
+                        .header(HttpHeaders.AUTHORIZATION, auth(OTHER_EMAIL, OTHER_PASSWORD)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void quizOperationsRequireAuthentication() throws Exception {
+        mockMvc.perform(get("/api/quizzes"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(post("/api/quizzes")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"Quiz","text":"Question","options":["A","B"],"answer":[]}
+                                """))
+                .andExpect(status().isUnauthorized());
+    }
+
+    private int createQuiz(String quiz, String email, String password) throws Exception {
         String response = mockMvc.perform(post("/api/quizzes")
+                        .header(HttpHeaders.AUTHORIZATION, auth(email, password))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(quiz))
                 .andExpect(status().isOk())
@@ -209,5 +263,10 @@ class QuizzesControllerTest {
 
         JsonNode responseJson = objectMapper.readTree(response);
         return responseJson.get("id").asInt();
+    }
+
+    private String auth(String email, String password) {
+        String credentials = email + ":" + password;
+        return "Basic " + Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
     }
 }

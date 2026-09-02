@@ -6,7 +6,10 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -24,19 +27,22 @@ import java.util.Set;
 public class QuizzesController {
 
     private final QuizRepository quizRepository;
+    private final UserRepository userRepository;
 
-    public QuizzesController(QuizRepository quizRepository) {
+    public QuizzesController(QuizRepository quizRepository, UserRepository userRepository) {
         this.quizRepository = quizRepository;
+        this.userRepository = userRepository;
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.OK)
-    public QuizView createQuiz(@Valid @RequestBody QuizRequest request) {
+    public QuizView createQuiz(@Valid @RequestBody QuizRequest request, Authentication authentication) {
         QuizEntity quiz = new QuizEntity(
                 request.title(),
                 request.text(),
                 request.options(),
-                request.answer() == null ? null : new HashSet<>(request.answer())
+                request.answer() == null ? null : new HashSet<>(request.answer()),
+                findUser(authentication)
         );
         return toView(quizRepository.save(quiz));
     }
@@ -67,9 +73,26 @@ public class QuizzesController {
         return new AnswerResponse(false, "Wrong answer! Please, try again.");
     }
 
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Transactional
+    public void deleteQuiz(@PathVariable int id, Authentication authentication) {
+        QuizEntity quiz = findQuiz(id);
+        if (quiz.getAuthor() == null || !quiz.getAuthor().getEmail().equals(authentication.getName())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not own this quiz");
+        }
+
+        quizRepository.delete(quiz);
+    }
+
     private QuizEntity findQuiz(int id) {
         return quizRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Quiz not found"));
+    }
+
+    private UserEntity findUser(Authentication authentication) {
+        return userRepository.findByEmail(authentication.getName())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not found"));
     }
 
     private QuizView toView(QuizEntity quiz) {

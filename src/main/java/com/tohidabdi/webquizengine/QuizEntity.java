@@ -9,6 +9,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.Fetch;
@@ -44,14 +45,19 @@ public class QuizEntity {
     @Fetch(FetchMode.SUBSELECT)
     private Set<Integer> answer = new HashSet<>();
 
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "author_id")
+    private UserEntity author;
+
     protected QuizEntity() {
     }
 
-    public QuizEntity(String title, String text, List<String> options, Set<Integer> answer) {
+    public QuizEntity(String title, String text, List<String> options, Set<Integer> answer, UserEntity author) {
         this.title = title;
         this.text = text;
         this.options = new ArrayList<>(options);
         this.answer = answer == null ? new HashSet<>() : new HashSet<>(answer);
+        this.author = author;
     }
 
     public Integer getId() {
@@ -72,5 +78,9 @@ public class QuizEntity {
 
     public Set<Integer> getAnswer() {
         return answer;
+    }
+
+    public UserEntity getAuthor() {
+        return author;
     }
 }
