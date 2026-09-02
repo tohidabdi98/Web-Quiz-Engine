@@ -36,6 +36,9 @@ class QuizControllerTest {
     private QuizRepository quizRepository;
 
     @Autowired
+    private QuizCompletionRepository completionRepository;
+
+    @Autowired
     private UserRepository userRepository;
 
     @Autowired
@@ -43,6 +46,8 @@ class QuizControllerTest {
 
     @BeforeEach
     void setUpUser() {
+        completionRepository.deleteAll();
+        completionRepository.flush();
         quizRepository.deleteAll();
         quizRepository.flush();
         userRepository.deleteAll();

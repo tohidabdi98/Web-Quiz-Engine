@@ -26,8 +26,18 @@ class RegistrationControllerTest {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private QuizCompletionRepository completionRepository;
+
+    @Autowired
+    private QuizRepository quizRepository;
+
     @BeforeEach
     void clearUsers() {
+        completionRepository.deleteAll();
+        completionRepository.flush();
+        quizRepository.deleteAll();
+        quizRepository.flush();
         userRepository.deleteAll();
         userRepository.flush();
     }

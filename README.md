@@ -1,6 +1,6 @@
 # Web Quiz Engine
 
-Stages 1-5 of the Web Quiz Engine project: a Spring Boot JSON API for creating and solving quizzes.
+Stages 1-6 of the Web Quiz Engine project: a Spring Boot JSON API for creating and solving quizzes.
 
 ## Run
 
@@ -40,9 +40,10 @@ The multi-quiz API exposes:
 
 - `POST /api/quizzes`
 - `GET /api/quizzes/{id}`
-- `GET /api/quizzes`
+- `GET /api/quizzes?page=0`
 - `POST /api/quizzes/{id}/solve`
 - `DELETE /api/quizzes/{id}`
+- `GET /api/quizzes/completed?page=0`
 
 Create requests must contain a non-blank `title`, a non-blank `text`, and at least
 two `options`. The `answer` is an array of correct option indexes and may be empty
@@ -50,10 +51,16 @@ or absent when no option is correct. Solve requests send an `answer` array; the
 submitted indexes are compared as a set.
 
 The answer is never included when retrieving or listing quizzes. Only the user who
-created a quiz can delete it.
+created a quiz can delete it. Quiz listings contain ten quizzes per page and are
+sorted by ID in ascending order.
+
+Successful solves are stored as completions for the authenticated user. A user may
+solve the same quiz multiple times; each completion is returned by
+`GET /api/quizzes/completed?page=0`, sorted newest first.
 
 Stage 4 persists quizzes in a disk-based H2 database named `quizdb`, so quizzes
-survive service restarts. Stage 5 also persists registered users.
+survive service restarts. Stage 5 also persists registered users, and Stage 6
+persists completion history.
 
 ## Test
 

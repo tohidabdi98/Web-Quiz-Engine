@@ -45,6 +45,9 @@ class QuizzesControllerTest {
     private QuizRepository quizRepository;
 
     @Autowired
+    private QuizCompletionRepository completionRepository;
+
+    @Autowired
     private UserRepository userRepository;
 
     @Autowired
@@ -52,6 +55,8 @@ class QuizzesControllerTest {
 
     @BeforeEach
     void setUpUsers() {
+        completionRepository.deleteAll();
+        completionRepository.flush();
         quizRepository.deleteAll();
         quizRepository.flush();
         userRepository.deleteAll();
@@ -89,22 +94,26 @@ class QuizzesControllerTest {
                 {"title":"Second","text":"Question 2","options":["C","D"],"answer":[1]}
                 """, OWNER_EMAIL, OWNER_PASSWORD);
 
-        mockMvc.perform(get("/api/quizzes").header(HttpHeaders.AUTHORIZATION, auth(OWNER_EMAIL, OWNER_PASSWORD)))
+        mockMvc.perform(get("/api/quizzes?page=0").header(HttpHeaders.AUTHORIZATION, auth(OWNER_EMAIL, OWNER_PASSWORD)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].id").value(firstId))
-                .andExpect(jsonPath("$[0].title").value("First"))
-                .andExpect(jsonPath("$[1].id").value(secondId))
-                .andExpect(jsonPath("$[1].title").value("Second"))
-                .andExpect(jsonPath("$[0].answer").doesNotExist())
-                .andExpect(jsonPath("$[1].answer").doesNotExist());
+                .andExpect(jsonPath("$.totalElements").value(2))
+                .andExpect(jsonPath("$.size").value(10))
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].id").value(firstId))
+                .andExpect(jsonPath("$.content[0].title").value("First"))
+                .andExpect(jsonPath("$.content[1].id").value(secondId))
+                .andExpect(jsonPath("$.content[1].title").value("Second"))
+                .andExpect(jsonPath("$.content[0].answer").doesNotExist())
+                .andExpect(jsonPath("$.content[1].answer").doesNotExist());
     }
 
     @Test
     void emptyServiceReturnsAnEmptyArray() throws Exception {
-        mockMvc.perform(get("/api/quizzes").header(HttpHeaders.AUTHORIZATION, auth(OWNER_EMAIL, OWNER_PASSWORD)))
+        mockMvc.perform(get("/api/quizzes?page=0").header(HttpHeaders.AUTHORIZATION, auth(OWNER_EMAIL, OWNER_PASSWORD)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(0));
+                .andExpect(jsonPath("$.totalElements").value(0))
+                .andExpect(jsonPath("$.content.length()").value(0))
+                .andExpect(jsonPath("$.empty").value(true));
     }
 
     @Test
@@ -212,10 +221,65 @@ class QuizzesControllerTest {
     }
 
     @Test
+    void quizzesAreReturnedInPagesOfTen() throws Exception {
+        for (int index = 0; index < 11; index++) {
+            createQuiz("""
+                    {"title":"Quiz %d","text":"Question","options":["A","B"],"answer":[]}
+                    """.formatted(index), OWNER_EMAIL, OWNER_PASSWORD);
+        }
+
+        mockMvc.perform(get("/api/quizzes?page=0")
+                        .header(HttpHeaders.AUTHORIZATION, auth(OWNER_EMAIL, OWNER_PASSWORD)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(11))
+                .andExpect(jsonPath("$.totalPages").value(2))
+                .andExpect(jsonPath("$.number").value(0))
+                .andExpect(jsonPath("$.size").value(10))
+                .andExpect(jsonPath("$.numberOfElements").value(10))
+                .andExpect(jsonPath("$.content.length()").value(10));
+
+        mockMvc.perform(get("/api/quizzes?page=1")
+                        .header(HttpHeaders.AUTHORIZATION, auth(OWNER_EMAIL, OWNER_PASSWORD)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.number").value(1))
+                .andExpect(jsonPath("$.numberOfElements").value(1))
+                .andExpect(jsonPath("$.content.length()").value(1));
+    }
+
+    @Test
+    void successfulCompletionsAreStoredAndReturnedNewestFirst() throws Exception {
+        int firstQuizId = createQuiz("""
+                {"title":"First","text":"Question","options":["A","B"],"answer":[0]}
+                """, OWNER_EMAIL, OWNER_PASSWORD);
+        int secondQuizId = createQuiz("""
+                {"title":"Second","text":"Question","options":["A","B"],"answer":[1]}
+                """, OWNER_EMAIL, OWNER_PASSWORD);
+
+        solveQuiz(firstQuizId, "[0]");
+        Thread.sleep(20);
+        solveQuiz(secondQuizId, "[1]");
+        Thread.sleep(20);
+        solveQuiz(firstQuizId, "[0]");
+
+        mockMvc.perform(get("/api/quizzes/completed?page=0")
+                        .header(HttpHeaders.AUTHORIZATION, auth(OWNER_EMAIL, OWNER_PASSWORD)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(3))
+                .andExpect(jsonPath("$.content.length()").value(3))
+                .andExpect(jsonPath("$.content[0].id").value(firstQuizId))
+                .andExpect(jsonPath("$.content[1].id").value(secondQuizId))
+                .andExpect(jsonPath("$.content[2].id").value(firstQuizId))
+                .andExpect(jsonPath("$.content[0].completedAt").isString())
+                .andExpect(jsonPath("$.content[1].completedAt").isString());
+    }
+
+    @Test
     void quizCanBeDeletedByItsAuthor() throws Exception {
         int id = createQuiz("""
                 {"title":"Deletable","text":"Question","options":["A","B"],"answer":[0]}
                 """, OWNER_EMAIL, OWNER_PASSWORD);
+
+        solveQuiz(id, "[0]");
 
         mockMvc.perform(delete("/api/quizzes/{id}", id)
                         .header(HttpHeaders.AUTHORIZATION, auth(OWNER_EMAIL, OWNER_PASSWORD)))
@@ -225,6 +289,11 @@ class QuizzesControllerTest {
         mockMvc.perform(get("/api/quizzes/{id}", id)
                         .header(HttpHeaders.AUTHORIZATION, auth(OWNER_EMAIL, OWNER_PASSWORD)))
                 .andExpect(status().isNotFound());
+
+        mockMvc.perform(get("/api/quizzes/completed?page=0")
+                        .header(HttpHeaders.AUTHORIZATION, auth(OWNER_EMAIL, OWNER_PASSWORD)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
     }
 
     @Test
@@ -240,7 +309,7 @@ class QuizzesControllerTest {
 
     @Test
     void quizOperationsRequireAuthentication() throws Exception {
-        mockMvc.perform(get("/api/quizzes"))
+        mockMvc.perform(get("/api/quizzes?page=0"))
                 .andExpect(status().isUnauthorized());
 
         mockMvc.perform(post("/api/quizzes")
@@ -248,6 +317,9 @@ class QuizzesControllerTest {
                         .content("""
                                 {"title":"Quiz","text":"Question","options":["A","B"],"answer":[]}
                                 """))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/api/quizzes/completed?page=0"))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -268,5 +340,16 @@ class QuizzesControllerTest {
     private String auth(String email, String password) {
         String credentials = email + ":" + password;
         return "Basic " + Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private void solveQuiz(int id, String answer) throws Exception {
+        mockMvc.perform(post("/api/quizzes/{id}/solve", id)
+                        .header(HttpHeaders.AUTHORIZATION, auth(OWNER_EMAIL, OWNER_PASSWORD))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"answer":%s}
+                                """.formatted(answer)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
     }
 }
