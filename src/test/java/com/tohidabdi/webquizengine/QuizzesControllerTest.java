@@ -26,7 +26,7 @@ class QuizzesControllerTest {
                   "title": "The Java Logo",
                   "text": "What is depicted on the Java logo?",
                   "options": ["Robot", "Tea leaf", "Cup of coffee", "Bug"],
-                  "answer": 2
+                  "answer": [2]
                 }
                 """;
 
@@ -49,10 +49,10 @@ class QuizzesControllerTest {
     @Test
     void allQuizzesAreReturnedInIdOrderWithoutAnswers() throws Exception {
         createQuiz("""
-                {"title":"First","text":"Question 1","options":["A","B"],"answer":0}
+                {"title":"First","text":"Question 1","options":["A","B"],"answer":[0]}
                 """);
         createQuiz("""
-                {"title":"Second","text":"Question 2","options":["C","D"],"answer":1}
+                {"title":"Second","text":"Question 2","options":["C","D"],"answer":[1]}
                 """);
 
         mockMvc.perform(get("/api/quizzes"))
@@ -76,15 +76,23 @@ class QuizzesControllerTest {
     @Test
     void quizCanBeSolvedWithCorrectOrIncorrectAnswer() throws Exception {
         createQuiz("""
-                {"title":"Quiz","text":"Question","options":["A","B","C"],"answer":2}
+                {"title":"Quiz","text":"Question","options":["A","B","C"],"answer":[0,2]}
                 """);
 
-        mockMvc.perform(post("/api/quizzes/1/solve").param("answer", "2"))
+        mockMvc.perform(post("/api/quizzes/1/solve")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"answer":[2,0]}
+                                """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.feedback").value("Congratulations, you're right!"));
 
-        mockMvc.perform(post("/api/quizzes/1/solve").param("answer", "1"))
+        mockMvc.perform(post("/api/quizzes/1/solve")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"answer":[0]}
+                                """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.feedback").value("Wrong answer! Please, try again."));
@@ -95,17 +103,71 @@ class QuizzesControllerTest {
         mockMvc.perform(get("/api/quizzes/15"))
                 .andExpect(status().isNotFound());
 
-        mockMvc.perform(post("/api/quizzes/15/solve").param("answer", "1"))
+        mockMvc.perform(post("/api/quizzes/15/solve")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"answer":[1]}
+                                """))
                 .andExpect(status().isNotFound());
     }
 
     @Test
-    void quizCreationAcceptsMissingFields() throws Exception {
+    void missingTitleIsRejected() throws Exception {
         mockMvc.perform(post("/api/quizzes")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
+                        .content("""
+                                {
+                                  "text": "Question",
+                                  "options": ["A", "B"],
+                                  "answer": []
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void blankTitleIsRejected() throws Exception {
+        mockMvc.perform(post("/api/quizzes")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "",
+                                  "text": "Question",
+                                  "options": ["A", "B"],
+                                  "answer": []
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void fewerThanTwoOptionsAreRejected() throws Exception {
+        mockMvc.perform(post("/api/quizzes")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Quiz",
+                                  "text": "Question",
+                                  "options": ["Only one"],
+                                  "answer": []
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void quizzesWithNoCorrectOptionsCanBeSolvedWithAnEmptyAnswer() throws Exception {
+        createQuiz("""
+                {"title":"Quiz","text":"Question","options":["A","B"],"answer":[]}
+                """);
+
+        mockMvc.perform(post("/api/quizzes/1/solve")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"answer":[]}
+                                """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(1));
+                .andExpect(jsonPath("$.success").value(true));
     }
 
     private void createQuiz(String quiz) throws Exception {

@@ -1,6 +1,6 @@
 # Web Quiz Engine
 
-Stages 1 and 2 of the Web Quiz Engine project: a Spring Boot JSON API for creating and solving quizzes.
+Stages 1–3 of the Web Quiz Engine project: a Spring Boot JSON API for creating and solving quizzes.
 
 ## Run
 
@@ -33,7 +33,10 @@ Stage 2 stores quizzes in memory and exposes:
 - `GET /api/quizzes`
 - `POST /api/quizzes/{id}/solve?answer={index}`
 
-Create requests contain `title`, `text`, `options`, and `answer`. The answer is never included when retrieving or listing quizzes.
+Create requests must contain a non-blank `title`, a non-blank `text`, and at least two `options`.
+The `answer` is an array of correct option indexes and may be empty when no option is correct.
+Solve requests also send an `answer` array, and the submitted indexes are compared as a set.
+The answer is never included when retrieving or listing quizzes.
 
 ## Test
 

@@ -6,13 +6,18 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -26,15 +31,14 @@ public class QuizzesController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.OK)
-    public QuizView createQuiz(@RequestBody(required = false) QuizRequest request) {
-        QuizRequest quizRequest = request == null ? new QuizRequest(null, null, null, null) : request;
+    public QuizView createQuiz(@Valid @RequestBody QuizRequest request) {
         int id = nextId.getAndIncrement();
         StoredQuiz quiz = new StoredQuiz(
                 id,
-                quizRequest.title(),
-                quizRequest.text(),
-                quizRequest.options(),
-                quizRequest.answer()
+                request.title(),
+                request.text(),
+                request.options(),
+                request.answer() == null ? null : new HashSet<>(request.answer())
         );
         quizzes.put(id, quiz);
         return quiz.view();
@@ -54,9 +58,12 @@ public class QuizzesController {
     }
 
     @PostMapping("/{id}/solve")
-    public AnswerResponse solveQuiz(@PathVariable int id, @RequestParam int answer) {
+    public AnswerResponse solveQuiz(@PathVariable int id, @RequestBody SolveRequest request) {
         StoredQuiz quiz = findQuiz(id);
-        boolean correct = quiz.answer() != null && quiz.answer() == answer;
+        Set<Integer> submittedAnswers = request.answer() == null
+                ? Set.of()
+                : new HashSet<>(request.answer());
+        boolean correct = quiz.answer().equals(submittedAnswers);
         if (correct) {
             return new AnswerResponse(true, "Congratulations, you're right!");
         }
@@ -72,7 +79,15 @@ public class QuizzesController {
         return quiz;
     }
 
-    public record QuizRequest(String title, String text, List<String> options, Integer answer) {
+    public record QuizRequest(
+            @NotBlank String title,
+            @NotBlank String text,
+            @NotNull @Size(min = 2) List<String> options,
+            List<Integer> answer
+    ) {
+    }
+
+    public record SolveRequest(List<Integer> answer) {
     }
 
     public record QuizView(int id, String title, String text, List<String> options) {
@@ -81,10 +96,11 @@ public class QuizzesController {
     public record AnswerResponse(boolean success, String feedback) {
     }
 
-    private record StoredQuiz(int id, String title, String text, List<String> options, Integer answer) {
+    private record StoredQuiz(int id, String title, String text, List<String> options, Set<Integer> answer) {
 
         private StoredQuiz {
-            options = options == null ? null : List.copyOf(new ArrayList<>(options));
+            options = List.copyOf(new ArrayList<>(options));
+            answer = answer == null ? Set.of() : Set.copyOf(answer);
         }
 
         private QuizView view() {
